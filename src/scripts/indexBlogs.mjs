@@ -1,9 +1,9 @@
 // Major ref: https://js.langchain.com/docs/modules/indexes/vector_stores/integrations/pinecone
 import { Pinecone } from "@pinecone-database/pinecone";
 import dotenv from "dotenv";
-import { Document } from "langchain/document";
-import { OpenAIEmbeddings } from "langchain/embeddings/openai";
-import { PineconeStore } from "langchain/vectorstores/pinecone";
+import { Document } from "@langchain/core/documents";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { PineconeStore } from "@langchain/pinecone";
 import fs from "fs";
 import path from "path";
 
@@ -13,9 +13,20 @@ const MAX_TOKENS = 8191;
 
 const fileNames = fs.readdirSync("blogs");
 
+const fields = {
+  model: 'text-embedding-3-small',  
+};
+
+const configuration = {
+  apiKey: process.env.OPENAI_API_KEY,  
+  basePath: process.env.OPENAI_BASE_PATH, 
+};
+
+const embeddings = new OpenAIEmbeddings(fields, configuration);
+
 // Helper function to chunk a string into smaller parts
 const chunkString = (str, length) => {
-  const size = Math.ceil(str.length / length);
+  const size = Math.ceil(str.length / length); //向上取整
   const r = Array(size);
   let offset = 0;
 
@@ -27,9 +38,9 @@ const chunkString = (str, length) => {
   return r;
 };
 
-const lanchainDocs = [];
+const langchainDocs = [];
 
-fileNames.forEach((fileName) => {
+fileNames.forEach((fileName) => { //遍历所有的文件名
   const filePath = path.join("blogs", fileName);
   const fileContent = fs.readFileSync(filePath, "utf8");
   console.log("Processing", fileName);
@@ -38,7 +49,7 @@ fileNames.forEach((fileName) => {
   
   chunks.forEach((chunk, index) => {
     console.log("Processing chunk", index);
-    lanchainDocs.push(new Document({
+    langchainDocs.push(new Document({
       metadata: { fileName, chunkIndex: index },
       pageContent: chunk,
     }));
@@ -50,10 +61,8 @@ const client = new Pinecone({
 });
 const pineconeIndex = client.Index(process.env.PINECONE_INDEX);
 
-await PineconeStore.fromDocuments(
-  lanchainDocs,
-  new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY }),
-  {
-    pineconeIndex,
-  }
-);
+await PineconeStore.fromDocuments(langchainDocs, embeddings, {
+  pineconeIndex,
+  maxConcurrency: 5, // Maximum number of batch requests to allow at once. Each batch is 1000 vectors.
+});
+
